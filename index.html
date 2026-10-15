@@ -339,6 +339,19 @@
       .result h1 { margin-bottom: 9px; }
       .result-copy { max-width: 360px; margin: 0 auto 22px; color: var(--muted); }
       .final-score { margin-bottom: 24px; color: var(--accent); font-size: 19px; font-weight: 750; }
+      .best-score {
+        width: fit-content;
+        margin: -8px auto 8px;
+        padding: 9px 13px;
+        border: 1px solid var(--console-line);
+        border-radius: 8px;
+        color: var(--signal);
+        background: var(--console);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .storage-note { margin: 0 auto 22px; color: var(--muted); font-size: 13px; }
       .result .primary { min-width: 150px; }
 
       .sr-only {
@@ -474,9 +487,52 @@
       let current = 0;
       let score = 0;
       let answered = false;
+      let runQuestions = [];
+      const bestScoreKey = "orbit-space-quiz-best-score";
+      let bestScore = null;
+      let bestScoreStorageAvailable = true;
+
+      try {
+        const savedBestScore = window.localStorage.getItem(bestScoreKey);
+        if (savedBestScore !== null) {
+          const parsedBestScore = Number(savedBestScore);
+          if (Number.isInteger(parsedBestScore) && parsedBestScore >= 0 && parsedBestScore <= questions.length) {
+            bestScore = parsedBestScore;
+          }
+        }
+      } catch {
+        bestScoreStorageAvailable = false;
+      }
+
+      function shuffled(items) {
+        const result = [...items];
+        for (let index = result.length - 1; index > 0; index -= 1) {
+          const swapIndex = Math.floor(Math.random() * (index + 1));
+          [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+        }
+        return result;
+      }
+
+      function startRun() {
+        runQuestions = shuffled(questions).map(question => {
+          const answers = shuffled(question.answers.map((text, index) => ({
+            text,
+            correct: index === question.correct
+          })));
+          return {
+            ...question,
+            answers: answers.map(answer => answer.text),
+            correct: answers.findIndex(answer => answer.correct)
+          };
+        });
+        current = 0;
+        score = 0;
+        scoreLabel.textContent = "0";
+        renderQuestion();
+      }
 
       function renderQuestion() {
-        const item = questions[current];
+        const item = runQuestions[current];
         answered = false;
         consoleStatus.textContent = "AWAITING INPUT";
         count.textContent = `Question ${current + 1} of ${questions.length}`;
@@ -509,7 +565,7 @@
         if (answered) return;
         answered = true;
         consoleStatus.textContent = "RESPONSE LOGGED";
-        const item = questions[current];
+        const item = runQuestions[current];
         const correct = selected === item.correct;
         const buttons = content.querySelectorAll(".answer");
         buttons.forEach((button, index) => {
@@ -532,7 +588,7 @@
 
       function advance() {
         if (!answered) return;
-        if (current < questions.length - 1) {
+        if (current < runQuestions.length - 1) {
           current += 1;
           renderQuestion();
           content.querySelector(".answer").focus();
@@ -546,7 +602,16 @@
         count.textContent = "Mission complete";
         progress.style.width = "100%";
         progressTrack.setAttribute("aria-valuenow", String(questions.length));
-        const percentage = score / questions.length;
+        if (bestScore === null || score > bestScore) {
+          bestScore = score;
+          try {
+            window.localStorage.setItem(bestScoreKey, String(bestScore));
+            bestScoreStorageAvailable = true;
+          } catch {
+            bestScoreStorageAvailable = false;
+          }
+        }
+        const percentage = score / runQuestions.length;
         const result = percentage === 1
           ? { emoji: "🚀", title: "Out of this world!", copy: "A perfect mission. You're officially a space-trivia superstar." }
           : percentage >= .7
@@ -561,21 +626,22 @@
             <p class="eyebrow">Mission complete</p>
             <h1 id="question">${result.title}</h1>
             <p class="result-copy">${result.copy}</p>
-            <p class="final-score">⭐ ${score} out of ${questions.length} correct</p>
+            <p class="final-score">⭐ ${score} out of ${runQuestions.length} correct</p>
+            <p class="best-score">PERSONAL BEST · ${bestScore} / ${runQuestions.length}</p>
+            <p class="storage-note">${bestScoreStorageAvailable
+              ? "Best score saved on this device."
+              : "Best score couldn't be saved in this browser."}</p>
             <button class="primary" id="restart" type="button">Play again <span aria-hidden="true">↻</span></button>
           </div>
         `;
         content.querySelector("#restart").addEventListener("click", () => {
-          current = 0;
-          score = 0;
-          scoreLabel.textContent = "0";
-          renderQuestion();
+          startRun();
           content.querySelector(".answer").focus();
         });
         content.querySelector("#restart").focus();
       }
 
-      renderQuestion();
+      startRun();
     </script>
   </body>
 </html>
